@@ -1,57 +1,87 @@
-// components/CollisionModal.tsx
-import { Modal, Pressable, StyleSheet, Text, View } from "react-native";
+import { useEffect, useState } from 'react';
+import { ActivityIndicator } from 'react-native';
+import MapView, { Marker } from 'react-native-maps';
+import CollisionModal from './CollisionModal';
+import { SeverityColors } from '../../constants/Colors';
+import theme from '../../constants/Colors';
 
-export default function CollisionModal({ visible, onClose, data }) {
-if (!data) return null;
+const GEOJSON_URL = 'https://services.arcgis.com/G6F8XLCl5KtAlZ2G/arcgis/rest/services/Collisions/FeatureServer/0/query?outFields=*&where=1%3D1&f=geojson';
+
+export default function CollisionMap() {
+const [collisions, setCollisions] = useState([]);
+const [loading, setLoading] = useState(true);
+
+// * State for modal visibility and selected collision
+const [modalVisible, setModalVisible] = useState(false);
+const [selectedCollision, setSelectedCollision] = useState(null);
+
+// * Function to handle marker press
+const handleMarkerPress = (collision) => {
+setSelectedCollision({
+title: collision.properties.Location,
+date: collision.properties.Accident_Date,
+severity: collision.properties.Max_injury || "N/A",
+description: collision.properties.Description || "No description available.",
+});
+setModalVisible(true);
+};
+
+useEffect(() => {
+fetch(GEOJSON_URL)
+.then(response => response.json())
+.then(data => {
+setCollisions(data.features || []);
+setLoading(false);
+})
+.catch(() => setLoading(false));
+}, []);
+
+if (loading) return <ActivityIndicator style={{ flex: 1 }} />;
 
 return (
-<Modal
-visible={visible}
-transparent
-animationType="slide"
+<>
+<MapView
+style={{ flex: 1 }}
+initialRegion={{
+latitude: 45.4215, // Ottawa center
+longitude: -75.6997,
+latitudeDelta: 0.5,
+longitudeDelta: 0.5,
+}}
 >
-<View style={styles.overlay}>
-<View style={styles.box}>
-<Text style={styles.title}>{data.title ?? "Collision Details"}</Text>
+{collisions.map((feature, idx) => {
+  let pinColor;
+  const severity = feature.properties.Max_injury;
+  if (severity === 'Minor') {
+    pinColor = SeverityColors.Minor;
+  } else if (severity === 'None') {
+    pinColor = SeverityColors.None;
+  } else {
+    pinColor = SeverityColors.Default;
+  }
+  return (
+    <Marker
+      key={idx}
+      coordinate={{
+        latitude: feature.geometry.coordinates[1],
+        longitude: feature.geometry.coordinates[0],
+      }}
+      title={feature.properties.Location}
+      description={`Date: ${feature.properties.Accident_Date}, Injury: ${feature.properties.Max_injury || 'N/A'}`}
+      pinColor={pinColor}
+      // * When marker is pressed, show modal with details // Gabriel
+      onPress={() => handleMarkerPress(feature)}
+    />
+  );
+})}
+</MapView>
 
-<Text>Date: {data.date ?? "N/A"}</Text>
-<Text>Severity: {data.severity ?? "Unknown"}</Text>
-<Text>Description: {data.description ?? "No description available."}</Text>
-
-<Pressable onPress={onClose} style={styles.close}>
-<Text style={styles.closeText}>Close</Text>
-</Pressable>
-</View>
-</View>
-</Modal>
+{/* The modal at the bottom */}
+<CollisionModal
+visible={modalVisible}
+onClose={() => setModalVisible(false)}
+data={selectedCollision} // the selected collision info
+/>
+</>
 );
 }
-
-const styles = StyleSheet.create({
-overlay: {
-flex: 1,
-backgroundColor: "rgba(0,0,0,0.4)",
-justifyContent: "center",
-alignItems: "center",
-},
-box: {
-width: "80%",
-padding: 20,
-backgroundColor: "#fff",
-borderRadius: 10,
-elevation: 10,
-},
-title: {
-fontSize: 18,
-marginBottom: 10,
-fontWeight: "600",
-},
-close: {
-marginTop: 20,
-padding: 10,
-backgroundColor: "#007AFF",
-borderRadius: 6,
-alignSelf: "flex-end",
-},
-closeText: { color: "#fff" }
-});
